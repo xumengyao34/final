@@ -1,0 +1,234 @@
+# ==============================================================================
+# mbf_demo 统一参数文件
+#   - mbf_nav2:       MBF 接口服务器 (mbf_simple_nav)，加载 mbf_nav2_connector
+#                     插件，把 GetPath/ExePath action 转发给 Nav2
+#   - planner_server / controller_server / local_costmap / global_costmap:
+#                     Nav2 导航栈 
+# ==============================================================================
+
+mbf_nav2:
+  ros__parameters:
+    # 坐标系 (与 TF 树一致: map -> odom -> base_link -> {livox_frame, base_scan},
+    # odom -> base_link 由 odom_guard 合成 FAST-LIO 里程计发布)
+    global_frame: "map"
+    robot_frame: "base_link"
+    odom_frame: "odom"
+    odom_topic: "Odometry"    # odom_guard 合成的里程计 topic (odom -> base_link, 10Hz)
+    tf_timeout: 3.0
+
+    # 规划
+    planner_frequency: 1.0
+    planner_patience: 5.0
+    planner_max_retries: 3
+
+    # 控制
+    controller_frequency: 20.0
+    controller_patience: 15.0
+    controller_max_retries: 3
+
+    # 恢复行为 
+    recovery_enabled: true
+    recovery_patience: 15.0
+
+    # 振荡检测
+    oscillation_timeout: 0.0
+    oscillation_distance: 0.5
+
+    # 插件列表
+    planners: ["nav2_planner"]
+    controllers: ["nav2_controller"]
+
+    # 规划插件: 转发给 Nav2 的 compute_path_to_pose action
+    nav2_planner:
+      type: "mbf_nav2_connector::Nav2Planner"
+      nav2_planner_action: "compute_path_to_pose"
+      nav2_planner_name: "ThetaStar"   # 对应 planner_server 里的插件名
+      action_timeout: 30.0
+
+    # 控制插件: 转发给 Nav2 的 follow_path action
+    nav2_controller:
+      type: "mbf_nav2_connector::Nav2Controller"
+      nav2_controller_action: "follow_path"
+      nav2_controller_name: "FollowPath"   # 对应 controller_server 里的插件名
+      action_timeout: 60.0
+
+# ------------------------------------------------------------------------------
+# Nav2 规划器服务器 (Theta* 任意角规划器)
+# ------------------------------------------------------------------------------
+planner_server:
+  ros__parameters:
+    use_sim_time: false
+    planner_plugins: ["ThetaStar"]
+    ThetaStar:
+      plugin: "nav2_theta_star_planner/ThetaStarPlanner"
+      how_many_corners: 4   # 视线直连检查范围, 只允许 4 或 8; 越大路径越直
+      allow_unknown: true
+      w_euc_cost: 1.0       # 欧氏距离权重 (1.0 默认)
+      w_traversal_cost: 2.0 # 代价图穿越权重 (2.0 默认)
+      # false = 末段朝向不强制对准目标 yaw
+      # true 时规划器在末段插入插值姿态, 适合原地转向能力差的车
+      use_final_approach_orientation: false
+
+# 必须指向本地改过的 xml（行为树全局规划器指定）
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    navigate_to_pose_bt_xml: /home/xmy/final/src/mbf_test/config/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml
+    default_nav_to_pose_bt_xml: /home/xmy/final/src/mbf_test/config/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml
+
+# ------------------------------------------------------------------------------
+# Nav2 控制器服务器 (DWB / DWA)
+# ------------------------------------------------------------------------------
+controller_server:
+  ros__parameters:
+    use_sim_time: false
+    controller_frequency: 20.0
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    current_goal_checker: "general_goal_checker"
+
+    # 进度检查器
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 10.0
+
+    # 目标检查器
+    general_goal_checker:
+      stateful: true
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25
+      # [2026-10-28 实车] 到点停就行, 不要对齐目标朝向: 0.25 (rad) 会让 DWB 在
+      # 终点把车头转到 goal 箭头方向, 与 AMCL yaw 噪声叠加还会小幅来回摆;
+      # 改成 6.28 = 任意朝向都算到, 到点即停
+      yaw_goal_tolerance: 6.28
+
+    # DWB (DWA) 参数
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: true
+      min_vel_x: 0.0
+      max_vel_x: 0.3
+      min_speed_xy: 0.0
+      max_speed_xy: 0.3
+      max_vel_theta: 1.0
+      min_speed_theta: 0.0
+      acc_lim_x: 0.7
+      acc_lim_theta: 3.2
+      decel_lim_x: -0.5
+      decel_lim_theta: -3.2
+      
+      vx_samples: 20
+      vtheta_samples: 20
+      sim_time: 1.7
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      # [2026-10-27 实车] 0.2 太紧: AMCL 的 map->odom TF 更新间隔约 0.2s,
+      # DWB 查 TF 频繁报 "Transform data too old" -> follow_path abort 循环,
+      # 车不动。放宽到 0.5
+      transform_tolerance: 0.5
+      # DWA 的核心评价函数 (Critics)
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      # [2026-10-25] 0.02 (默认值) 下软区几乎不减速, 只有 inscribed 硬否决,
+      # 车会不减速直冲到障碍前 ~0.5m 才急停; 提到 0.5 后在 1m 外开始平滑减速
+      BaseObstacle.scale: 0.5
+      # [2026-10-28] 按路径走的灵活度调高: 路径贴合权重 (PathAlign/PathDist)
+      # 减半, 目标引力 (GoalDist) 加强 —— 绕障碍时允许偏离路径, 贴路径不再
+      # 那么死板; 实车觉得还是太"死"可继续降到 8.0
+      PathAlign.scale: 16.0
+      # 对准路径上前方 0.3m 的点 (原来 0.1m): 少蛇形修正, 转弯更顺滑
+      PathAlign.forward_point_distance: 0.3
+      GoalAlign.scale: 24.0
+      PathDist.scale: 16.0
+      GoalDist.scale: 32.0
+
+# ------------------------------------------------------------------------------
+# 局部代价地图
+# ------------------------------------------------------------------------------
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: false
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom    # odom_guard 合成的里程计帧 (odom -> base_link)
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 10
+      height: 10
+      resolution: 0.05
+      # 实测转弯刮蹭的话加 0.02~0.05 余量, 如 ±0.17
+      footprint: "[[-0.20, -0.20], [0.20, -0.20], [0.20, 0.20], [-0.20, 0.20]]"
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        # /scan 由 livox_pc_to_scan 节点从 MID360 点云转换而来,
+        # 帧 base_scan = 雷达安装位置的水平虚拟坐标系 (见 launch 里的静态 TF)
+        observation_sources: scan
+        scan:
+          topic: /scan
+          sensor_frame: base_scan
+          data_type: LaserScan
+          clearing: true
+          marking: true
+          obstacle_max_range: 8.0
+          obstacle_min_range: 0.15
+          raytrace_max_range: 8.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # 下限 = 车半径+0.6 = 0.75
+        # 还想离得更远再降到 1.0~1.5, 代价是密集桌椅区的窄通道可能被规划器拒走。
+        inflation_radius: 1.5
+        cost_scaling_factor: 2.0
+
+# ------------------------------------------------------------------------------
+# 全局代价地图
+# ------------------------------------------------------------------------------
+# 同上: 节点全名 /global_costmap/global_costmap, 必须两级嵌套
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: false
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      rolling_window: false
+      resolution: 0.05
+      footprint: "[[-0.20, -0.20], [0.20, -0.20], [0.20, 0.20], [-0.20, 0.20]]"
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        enabled: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          sensor_frame: base_scan
+          data_type: LaserScan
+          clearing: true
+          marking: true
+          obstacle_max_range: 8.0
+          obstacle_min_range: 0.15
+          raytrace_max_range: 8.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 1.5
+        cost_scaling_factor: 2.0
+
+# ------------------------------------------------------------------------------
+# 速度平滑器: 限速/限加速度后发 Twist 到 /cmd_vel
+# ------------------------------------------------------------------------------
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: false
+    smoothing_frequency: 20.0
+    max_velocity: [0.35, 0.0, 1.0]
+    min_velocity: [-0.35, 0.0, -1.0]
+    acceleration: [2.0, 0.0, 3.2]
+    deceleration: [-2.0, 0.0, -3.2]

@@ -1,0 +1,64 @@
+/**:
+    ros__parameters:
+        feature_extract_enable: false
+        point_filter_num: 3
+        max_iteration: 3
+        filter_size_surf: 0.5
+        filter_size_map: 0.5
+        cube_side_length: 1000.0
+        runtime_pos_log_enable: false
+        map_file_path: "./test.pcd"
+
+        common:
+            lid_topic:  "/livox/lidar"
+            imu_topic:  "/imu_level"     # 2026-10-24: MID360 斜装 44.2°, 改订 mbf_test/livox_imu_level.py
+                                         # 旋到水平系后的 IMU。否则 FAST-LIO 世界系 camera_init 是斜的,
+                                         # AMCL 按 z-up 读 odom yaw 差 180° -> RViz 前进显示成后退
+            time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
+            time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
+                                        # This param will take effect no matter what time_sync_en is. So if the time offset is not known exactly, please set as 0.0
+
+        preprocess:
+            lidar_type: 1                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 4 for any other pointcloud input
+            scan_line:  4
+            blind: 0.5
+            timestamp_unit: 3
+            scan_rate: 10
+
+        mapping:
+            acc_cov: 0.1
+            gyr_cov: 0.1
+            b_acc_cov: 0.0001
+            b_gyr_cov: 0.0001
+            fov_degree:    360.0
+            det_range:     100.0
+            extrinsic_est_en:  false     # false: 关闭 IMU-LiDAR 外参在线估计。
+            # 2026-10-24 实车教训: 外参已精确标定(出厂外参+旋平), 在线估计在退化场景
+            # (贴墙太近/白墙/开阔地 特征少) 会把外参带飞, 拖着整个状态发散,
+            # 实测 /Odometry 突然飘到几百米外、z 掉到 -79m。关掉后直接用下面固定外参。
+            # 2026-10-30 TF 简化: 外参 = 完整安装矩阵 R = Rz(yaw)·Ry(pitch)·Rx(roll)
+            # (旋平 + 偏航对齐), body 系轴与 base_link 完全一致 -> body->base_link 只剩纯平移,
+            # odom_guard 把位姿直接合成到 base_link (body 帧已从 TF 树删除)。
+            #   p_body = R·p_lidar + R·ext, ext = 出厂外参 (lidar 在 IMU 系中的位置, Livox 语义)
+            # R 必须与 mbf_test/launch/lidar_extrinsic.py 的标定值一致 (launch 传给
+            # livox_imu_level / odom_guard 与静态 TF), 不同步 = 180° 类事故。
+            # 数值 (roll=-0.772, pitch=0, yaw=-1.5708, ext=(-0.011,-0.02329,0.04412)):
+            #   R = [[0, 0.7163, 0.6978], [-1, 0, 0], [0, -0.6978, 0.7163]] (行主序)
+            #   R·ext = (0.0141, 0.011, 0.0479)
+            extrinsic_T: [ 0.0141, 0.011, 0.0479 ]
+            extrinsic_R: [ 0., 0.7163, 0.6978,
+                           -1., 0., 0.,
+                           0., -0.6978, 0.7163]
+
+        publish:
+            path_en: true                # true: publish Path
+            effect_map_en: false         # true: publish Effects
+            map_en: true                 # true: publish Map cloud
+            scan_publish_en:  true       # false: close all the point cloud output
+            dense_publish_en: false      # false: low down the points number in a global-frame point clouds scan.
+            scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
+
+        pcd_save:
+            pcd_save_en: true
+            interval: -1                 # how many LiDAR frames saved in each pcd file; 
+                                        # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.

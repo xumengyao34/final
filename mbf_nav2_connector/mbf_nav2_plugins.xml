@@ -1,0 +1,19 @@
+<library path="nav2_planner_plugin">
+  <class type="mbf_nav2_connector::Nav2Planner" base_class_type="mbf_simple_core::SimplePlanner">
+    <description>
+      Nav2 Planner Plugin for Move Base Flex.
+      This plugin forwards planning requests from MBF to Nav2's ComputePathToPose action server.
+      It provides a map-less interface by delegating all planning to Nav2's navigation stack.
+    </description>
+  </class>
+</library>
+
+<library path="nav2_controller_plugin">
+  <class type="mbf_nav2_connector::Nav2Controller" base_class_type="mbf_simple_core::SimpleController">
+    <description>
+      Nav2 Controller Plugin for Move Base Flex.
+      This plugin forwards path following requests from MBF to Nav2's FollowPath action server.
+      It provides a map-less interface by delegating all control to Nav2's navigation stack.
+    </description>
+  </class>
+</library>

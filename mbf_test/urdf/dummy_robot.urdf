@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- 实车占位模型: 0.3 x 0.3 正方形底盘 (高度暂按 0.25 估, 量了再改),
+     根部为 base_link, 位于底盘几何中心, 车头为 +x。
+     雷达等传感器帧由 launch 里的静态 TF 发布, 不在 URDF 里定义。 -->
+<robot name="dummy_robot">
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.125" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.3 0.3 0.25"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.2 0.4 0.8 1.0"/>
+      </material>
+    </visual>
+  </link>
+</robot>

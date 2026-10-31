@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mbf_nav2_connector</name>
+  <version>0.1.0</version>
+  <description>An implementation of Move Base Flex that forwards actions to Nav2</description>
+  <maintainer email="user@todo.todo">User</maintainer>
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Core ROS 2 dependencies -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>pluginlib</depend>
+  
+  <!-- MBF dependencies -->
+  <depend>mbf_simple_core</depend>
+  <depend>mbf_utility</depend>
+  <depend>mbf_msgs</depend>
+  
+  <!-- Nav2 dependencies -->
+  <depend>nav2_msgs</depend>
+  <depend>nav2_core</depend>
+  <depend>nav_msgs</depend>
+  
+  <!-- Message dependencies -->
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <mbf_simple_core plugin="${prefix}/mbf_nav2_plugins.xml" />
+  </export>
+</package>
